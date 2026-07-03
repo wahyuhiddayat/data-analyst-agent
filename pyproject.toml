@@ -1,0 +1,24 @@
+[project]
+name = "data-analyst-agent"
+version = "0.1.0"
+description = "An LLM agent that writes and runs Python to answer questions about tabular data."
+requires-python = ">=3.10"
+dependencies = [
+    "openai>=1.40",
+    "pandas>=2.0",
+    "numpy>=1.24",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+data-analyst-agent = "data_analyst_agent.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
