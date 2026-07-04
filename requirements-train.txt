@@ -1,0 +1,8 @@
+# GPU training dependencies (Kaggle T4 / QLoRA). Kept separate from the agent's
+# runtime requirements. torch is provided by the Kaggle image; vLLM is installed
+# in the serving step of the notebook, not here.
+transformers>=4.46
+peft>=0.13
+bitsandbytes>=0.44
+accelerate>=1.0
+datasets>=3.0
