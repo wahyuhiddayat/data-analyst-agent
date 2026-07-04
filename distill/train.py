@@ -84,7 +84,16 @@ def build_dataset(data_path: str, tokenizer, max_length: int):
         enc["labels"] = labels
         return enc
 
-    return dataset.map(tokenize, remove_columns=dataset.column_names)
+    tokenized = dataset.map(tokenize, remove_columns=dataset.column_names)
+
+    # Fail loudly if masking left nothing to train on: this happens when the base
+    # model's chat template does not match ASSISTANT_SPAN (built for Qwen/ChatML).
+    if not any(any(label != -100 for label in ex["labels"]) for ex in tokenized):
+        raise ValueError(
+            "Loss masking produced no trainable tokens. ASSISTANT_SPAN expects the "
+            "Qwen/ChatML chat template; a different model family needs a matching pattern."
+        )
+    return tokenized
 
 
 def load_model(model_id: str, load_4bit: bool):
@@ -120,7 +129,7 @@ def load_model(model_id: str, load_4bit: bool):
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="QLoRA fine-tune a student on teacher trajectories.")
+    parser = argparse.ArgumentParser(description="LoRA fine-tune a student on teacher trajectories.")
     parser.add_argument("--model", default="Qwen/Qwen2.5-3B-Instruct", help="Base model id.")
     parser.add_argument("--data", required=True, help="Formatted training JSONL.")
     parser.add_argument("--out", required=True, help="Directory to save the LoRA adapter.")
