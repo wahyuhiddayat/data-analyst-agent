@@ -1,5 +1,6 @@
 import argparse
 import json
+import re
 
 import torch
 from datasets import load_dataset
@@ -8,13 +9,17 @@ from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     BitsAndBytesConfig,
-    DataCollatorForLanguageModeling,
+    DataCollatorForSeq2Seq,
     Trainer,
     TrainingArguments,
 )
 
 # Attention/MLP projections for Qwen-style models.
 LORA_TARGET_MODULES = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+
+# Assistant turns in the Qwen chat format, including the closing token so the
+# model also learns where to stop.
+ASSISTANT_SPAN = re.compile(r"<\|im_start\|>assistant\n(.*?<\|im_end\|>)", re.DOTALL)
 
 
 def to_hf_conversation(example: dict) -> tuple[list[dict], list[dict]]:
@@ -49,12 +54,36 @@ def to_hf_conversation(example: dict) -> tuple[list[dict], list[dict]]:
 
 
 def build_dataset(data_path: str, tokenizer, max_length: int):
+    """
+    Tokenize trajectories and mask the loss to assistant turns only.
+
+    Loss is computed on the assistant's tool calls, final answers, and the token
+    that ends each turn. System, user, and tool-result tokens are set to -100 so
+    the model is not trained to reproduce schemas or tool outputs -- training on
+    those degrades tool-call formatting and stop behavior.
+    """
     dataset = load_dataset("json", data_files=data_path, split="train")
 
     def tokenize(example):
         messages, tools = to_hf_conversation(example)
         text = tokenizer.apply_chat_template(messages, tools=tools, tokenize=False)
-        return tokenizer(text, truncation=True, max_length=max_length)
+        enc = tokenizer(
+            text,
+            truncation=True,
+            max_length=max_length,
+            add_special_tokens=False,
+            return_offsets_mapping=True,
+        )
+        offsets = enc.pop("offset_mapping")
+        ids = enc["input_ids"]
+        labels = [-100] * len(ids)
+        for match in ASSISTANT_SPAN.finditer(text):
+            start, end = match.start(1), match.end(1)
+            for i, (a, b) in enumerate(offsets):
+                if a != b and a >= start and b <= end:
+                    labels[i] = ids[i]
+        enc["labels"] = labels
+        return enc
 
     return dataset.map(tokenize, remove_columns=dataset.column_names)
 
@@ -78,7 +107,7 @@ def main() -> None:
     parser.add_argument("--model", default="Qwen/Qwen2.5-3B-Instruct", help="Base model id.")
     parser.add_argument("--data", required=True, help="Formatted training JSONL.")
     parser.add_argument("--out", required=True, help="Directory to save the LoRA adapter.")
-    parser.add_argument("--epochs", type=float, default=3.0)
+    parser.add_argument("--epochs", type=float, default=2.0)
     parser.add_argument("--max-length", type=int, default=4096)
     parser.add_argument("--lora-rank", type=int, default=16)
     parser.add_argument("--learning-rate", type=float, default=2e-4)
@@ -121,7 +150,7 @@ def main() -> None:
             report_to="none",
         ),
         train_dataset=dataset,
-        data_collator=DataCollatorForLanguageModeling(tokenizer, mlm=False),
+        data_collator=DataCollatorForSeq2Seq(tokenizer, padding=True),
     )
     trainer.train()
 
