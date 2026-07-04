@@ -1,7 +1,9 @@
 import base64
 import queue
 import re
+import shutil
 import subprocess
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -43,6 +45,11 @@ class KernelSession:
         self._exec_timeout = exec_timeout
         self._output_dir = Path(output_dir)
         self._fig_count = 0
+        # Run generated code in a throwaway directory so files it writes do not
+        # land in the project tree. Figures are still saved to _output_dir, which
+        # is resolved against the host process, not the kernel.
+        self._workdir = tempfile.mkdtemp(prefix="daa_kernel_")
+        self.run(f"import os as _os; _os.chdir({self._workdir!r})")
 
     def run(self, code: str) -> ExecResult:
         msg_id = self._kc.execute(code)
@@ -102,6 +109,7 @@ class KernelSession:
             self._km.shutdown_kernel(now=True)
         except Exception:
             pass
+        shutil.rmtree(self._workdir, ignore_errors=True)
 
     def __enter__(self) -> "KernelSession":
         return self

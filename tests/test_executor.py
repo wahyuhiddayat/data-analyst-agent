@@ -14,3 +14,10 @@ def test_error_is_captured():
         result = session.run("undefined_name")
         assert not result.ok
         assert "NameError" in result.error
+
+
+def test_generated_files_do_not_pollute_host_cwd(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    with KernelSession() as session:
+        assert session.run("open('leaked.txt', 'w').write('x')").ok
+    assert not (tmp_path / "leaked.txt").exists()

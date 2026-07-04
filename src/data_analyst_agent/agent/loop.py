@@ -1,5 +1,6 @@
 import json
 import os
+from pathlib import Path
 
 import pandas as pd
 from openai import OpenAI
@@ -59,6 +60,8 @@ def analyze(
     client = OpenAI(api_key=os.getenv("DEEPSEEK_API_KEY"), base_url=DEFAULT_BASE_URL)
     tracer = tracer or Tracer()
 
+    # Resolve to absolute so the kernel can read it from its isolated working dir.
+    csv_path = str(Path(csv_path).resolve())
     df = pd.read_csv(csv_path)
     schema = summarize_dataframe(df)
     messages = [
