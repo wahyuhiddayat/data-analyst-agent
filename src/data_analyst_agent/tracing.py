@@ -22,6 +22,7 @@ class Tracer:
         self.path = Path(path) if path else None
         self.verbose = verbose
         self.events: list[dict] = []
+        self.messages: list = []
         self.totals = {
             "prompt_tokens": 0,
             "completion_tokens": 0,

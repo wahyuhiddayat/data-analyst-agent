@@ -65,6 +65,7 @@ def analyze(
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": build_task_message(question, schema)},
     ]
+    tracer.messages = messages
 
     with KernelSession() as session:
         session.run(_bootstrap(csv_path))
