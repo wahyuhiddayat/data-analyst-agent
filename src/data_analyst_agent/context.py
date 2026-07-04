@@ -15,8 +15,8 @@ def summarize_dataframe(df: pd.DataFrame, sample_rows: int = 5) -> str:
 
     lines += ["", f"First {sample_rows} rows:", df.head(sample_rows).to_string(index=False)]
 
-    numeric = df.describe(include="number")
+    numeric = df.select_dtypes("number")
     lines += ["", "Numeric summary:"]
-    lines.append(numeric.to_string() if not numeric.empty else "  (no numeric columns)")
+    lines.append(numeric.describe().to_string() if not numeric.empty else "  (no numeric columns)")
 
     return "\n".join(lines)
