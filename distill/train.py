@@ -8,7 +8,6 @@ from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
-    BitsAndBytesConfig,
     DataCollatorForSeq2Seq,
     Trainer,
     TrainingArguments,
@@ -88,18 +87,36 @@ def build_dataset(data_path: str, tokenizer, max_length: int):
     return dataset.map(tokenize, remove_columns=dataset.column_names)
 
 
-def load_model(model_id: str):
-    quant_config = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_quant_type="nf4",
-        bnb_4bit_use_double_quant=True,
-        bnb_4bit_compute_dtype=torch.float16,
-    )
+def load_model(model_id: str, load_4bit: bool):
+    """
+    Load the base model for LoRA training.
+
+    A 3B model fits on a 16GB T4 in fp16, so 4-bit quantization is off by default
+    and only needed to fit larger models. Enabling it requires a working
+    bitsandbytes build matching the CUDA runtime.
+    """
+    if load_4bit:
+        from transformers import BitsAndBytesConfig
+
+        quant_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_compute_dtype=torch.float16,
+        )
+        model = AutoModelForCausalLM.from_pretrained(
+            model_id, quantization_config=quant_config, device_map="auto"
+        )
+        model.config.use_cache = False
+        return prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
+
     model = AutoModelForCausalLM.from_pretrained(
-        model_id, quantization_config=quant_config, device_map="auto"
+        model_id, torch_dtype=torch.float16, device_map="auto"
     )
     model.config.use_cache = False
-    return prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
+    model.gradient_checkpointing_enable()
+    model.enable_input_require_grads()
+    return model
 
 
 def main() -> None:
@@ -112,13 +129,15 @@ def main() -> None:
     parser.add_argument("--lora-rank", type=int, default=16)
     parser.add_argument("--learning-rate", type=float, default=2e-4)
     parser.add_argument("--grad-accum", type=int, default=8)
+    parser.add_argument("--load-4bit", action="store_true",
+                        help="Quantize the base model to 4-bit (needs bitsandbytes; only for large models).")
     args = parser.parse_args()
 
     tokenizer = AutoTokenizer.from_pretrained(args.model)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    model = load_model(args.model)
+    model = load_model(args.model, args.load_4bit)
     model = get_peft_model(model, LoraConfig(
         r=args.lora_rank,
         lora_alpha=args.lora_rank * 2,
@@ -146,7 +165,7 @@ def main() -> None:
             gradient_checkpointing=True,
             logging_steps=10,
             save_strategy="epoch",
-            optim="paged_adamw_8bit",
+            optim="paged_adamw_8bit" if args.load_4bit else "adamw_torch",
             report_to="none",
         ),
         train_dataset=dataset,
