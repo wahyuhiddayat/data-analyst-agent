@@ -5,7 +5,7 @@ import pandas as pd
 from openai import OpenAI
 
 from ..context import summarize_dataframe
-from ..sandbox.executor import execute_python
+from ..sandbox.executor import KernelSession
 from ..tracing import Tracer
 from .prompts import SYSTEM_PROMPT, build_task_message
 
@@ -19,8 +19,9 @@ RUN_PYTHON_TOOL = {
         "name": "run_python",
         "description": (
             "Execute Python code against the preloaded pandas DataFrame `df`. "
-            "`df`, `pd`, and `np` are available. Use print() to output any value you "
-            "want to observe; only stdout and error tracebacks are returned."
+            "`df`, `pd`, and `np` are available and state persists across calls. "
+            "Use print() to output any value you want to observe; only stdout, "
+            "error tracebacks, and saved figures are returned."
         ),
         "parameters": {
             "type": "object",
@@ -33,6 +34,15 @@ RUN_PYTHON_TOOL = {
 }
 
 
+def _bootstrap(csv_path: str) -> str:
+    return (
+        "%matplotlib inline\n"
+        "import pandas as pd\n"
+        "import numpy as np\n"
+        f"df = pd.read_csv({csv_path!r})\n"
+    )
+
+
 def analyze(
     question: str,
     csv_path: str,
@@ -42,7 +52,8 @@ def analyze(
 ) -> str:
     """
     Answer a question about a CSV file by letting the model iteratively write and
-    run Python until it can respond. Returns the model's final plain-language answer.
+    run Python in a persistent kernel until it can respond. Returns the model's
+    final plain-language answer.
     """
     client = OpenAI(api_key=os.getenv("DEEPSEEK_API_KEY"), base_url=DEFAULT_BASE_URL)
     tracer = tracer or Tracer()
@@ -54,29 +65,40 @@ def analyze(
         {"role": "user", "content": build_task_message(question, schema)},
     ]
 
-    for step in range(max_steps):
-        response = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            tools=[RUN_PYTHON_TOOL],
-            max_tokens=2048,
-        )
-        message = response.choices[0].message
-        messages.append(message)
+    with KernelSession() as session:
+        session.run(_bootstrap(csv_path))
 
-        if not message.tool_calls:
-            answer = message.content or ""
-            tracer.log_final(step, answer)
-            return answer
+        for step in range(max_steps):
+            response = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                tools=[RUN_PYTHON_TOOL],
+                max_tokens=2048,
+            )
+            tracer.log_usage(step, response.usage)
+            message = response.choices[0].message
+            messages.append(message)
 
-        for call in message.tool_calls:
-            code = json.loads(call.function.arguments)["code"]
-            result = execute_python(code, csv_path)
-            tracer.log_step(step, code, result)
-            messages.append({
-                "role": "tool",
-                "tool_call_id": call.id,
-                "content": result.output if result.ok else f"Error:\n{result.error}",
-            })
+            reasoning = getattr(message, "reasoning_content", None)
+            if reasoning:
+                tracer.log_thought(step, reasoning)
 
-    return "Reached the step limit without producing a final answer."
+            if not message.tool_calls:
+                answer = message.content or ""
+                tracer.log_final(step, answer)
+                return answer
+
+            if message.content:
+                tracer.log_thought(step, message.content)
+
+            for call in message.tool_calls:
+                code = json.loads(call.function.arguments)["code"]
+                result = session.run(code)
+                tracer.log_step(step, code, result)
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": call.id,
+                    "content": result.output if result.ok else f"Error:\n{result.error}",
+                })
+
+        return "Reached the step limit without producing a final answer."
