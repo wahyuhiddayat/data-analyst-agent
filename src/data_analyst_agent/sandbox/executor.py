@@ -1,6 +1,7 @@
 import base64
 import queue
 import re
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -33,7 +34,9 @@ class KernelSession:
 
     def __init__(self, output_dir: str = "outputs", exec_timeout: int = 30):
         self._km = KernelManager(kernel_name="python3")
-        self._km.start_kernel()
+        # Discard the kernel process's own stderr (startup banners/warnings);
+        # code errors still arrive over the iopub channel, not here.
+        self._km.start_kernel(stderr=subprocess.DEVNULL)
         self._kc = self._km.client()
         self._kc.start_channels()
         self._kc.wait_for_ready(timeout=60)
