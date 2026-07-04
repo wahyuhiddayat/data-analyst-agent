@@ -9,6 +9,7 @@ build/
 traces/
 outputs/
 *.jsonl
+eval/data/
 .pytest_cache/
 .DS_Store
 CLAUDE.md
