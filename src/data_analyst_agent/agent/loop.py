@@ -48,6 +48,7 @@ def analyze(
     csv_path: str,
     model: str = DEFAULT_MODEL,
     max_steps: int = MAX_STEPS,
+    temperature: float = 0.0,
     tracer: Tracer | None = None,
 ) -> str:
     """
@@ -73,7 +74,8 @@ def analyze(
                 model=model,
                 messages=messages,
                 tools=[RUN_PYTHON_TOOL],
-                max_tokens=2048,
+                max_tokens=8192,
+                temperature=temperature,
             )
             tracer.log_usage(step, response.usage)
             message = response.choices[0].message
@@ -92,7 +94,17 @@ def analyze(
                 tracer.log_thought(step, message.content)
 
             for call in message.tool_calls:
-                code = json.loads(call.function.arguments)["code"]
+                try:
+                    code = json.loads(call.function.arguments)["code"]
+                except (json.JSONDecodeError, KeyError):
+                    # Truncated or malformed arguments; tell the model to retry.
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": call.id,
+                        "content": "Error: tool arguments were not valid JSON "
+                                   "(possibly truncated). Retry with shorter code.",
+                    })
+                    continue
                 result = session.run(code)
                 tracer.log_step(step, code, result)
                 messages.append({
