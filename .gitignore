@@ -10,6 +10,7 @@ traces/
 outputs/
 *.jsonl
 eval/data/
+eval/trajectories/
 .pytest_cache/
 .DS_Store
 CLAUDE.md
