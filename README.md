@@ -4,7 +4,7 @@ An LLM agent that answers questions about tabular data by writing and running Py
 
 ## Why
 
-Most "chat with your data" demos are a single prompt with no measurement. This project is built as an agent with an explicit tool-use loop, an isolated code sandbox, and an evaluation harness that reports correctness, cost, and latency across configurations.
+Most "chat-with-data" demos are a single prompt with no measurement. This project is built as an agent with an explicit tool-use loop, an isolated code sandbox, and an evaluation harness that reports correctness, cost, and latency across configurations.
 
 ## How it works
 
@@ -37,7 +37,7 @@ python -m venv .venv
 pip install -r requirements.txt
 pip install -e . --no-deps      # adds the data-analyst-agent CLI entry point
 
-# 3. set your key
+# 3. set the API key
 cp .env.example .env            # then edit DEEPSEEK_API_KEY
 
 # 4. ask a question
