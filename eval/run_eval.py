@@ -58,7 +58,8 @@ def main() -> None:
 
     items = load_items(n=args.n, seed=args.seed)
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    out_path = RESULTS_DIR / f"{args.model}_{args.config}_n{args.n}_seed{args.seed}.jsonl"
+    safe_model = args.model.replace("/", "_")
+    out_path = RESULTS_DIR / f"{safe_model}_{args.config}_n{args.n}_seed{args.seed}.jsonl"
 
     records = []
     with out_path.open("w", encoding="utf-8") as out:

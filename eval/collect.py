@@ -117,8 +117,9 @@ def main() -> None:
     train_items = [it for it in load_items() if it.id not in test_ids]
 
     TRAJ_DIR.mkdir(parents=True, exist_ok=True)
-    traj_path = TRAJ_DIR / f"{args.model}.jsonl"
-    log_path = TRAJ_DIR / f"{args.model}.log.jsonl"
+    safe_model = args.model.replace("/", "_")
+    traj_path = TRAJ_DIR / f"{safe_model}.jsonl"
+    log_path = TRAJ_DIR / f"{safe_model}.log.jsonl"
 
     # Resume by default: skip questions already attempted, append to existing output.
     # Single pass over the train split; multi-pass runs should use --fresh.

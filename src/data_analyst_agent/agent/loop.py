@@ -78,7 +78,7 @@ def analyze(
                 model=model,
                 messages=messages,
                 tools=[RUN_PYTHON_TOOL],
-                max_tokens=8192,
+                max_tokens=4096,
                 temperature=temperature,
             )
             tracer.log_usage(step, response.usage)
