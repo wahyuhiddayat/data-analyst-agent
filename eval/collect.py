@@ -111,6 +111,9 @@ def main() -> None:
                         help="Sampling temperature; use >0 with multiple passes for variety.")
     parser.add_argument("--limit", type=int, default=None, help="Cap train questions (for smoke runs).")
     parser.add_argument("--fresh", action="store_true", help="Ignore existing output and start over.")
+    parser.add_argument("--repass", action="store_true",
+                        help="Re-attempt every train question and append; combine with --temperature "
+                             "to collect alternative solutions.")
     args = parser.parse_args()
 
     test_ids = {it.id for it in load_items(n=TEST_N, seed=TEST_SEED)}
@@ -122,21 +125,25 @@ def main() -> None:
     log_path = TRAJ_DIR / f"{safe_model}.log.jsonl"
 
     # Resume by default: skip questions already attempted, append to existing output.
-    # Single pass over the train split; multi-pass runs should use --fresh.
+    # --repass keeps the existing output but re-attempts every question, so extra
+    # passes can grow the dataset; dedup by signature drops identical solutions.
     seen: set[tuple] = set()
     done_ids: set[int] = set()
     kept = 0
     resuming = not args.fresh and log_path.exists()
     if resuming:
-        for line in log_path.open(encoding="utf-8"):
-            done_ids.add(json.loads(line)["id"])
         if traj_path.exists():
             for line in traj_path.open(encoding="utf-8"):
                 traj = json.loads(line)
                 seen.add((traj["id"], _signature(traj["messages"])))
                 kept += 1
-        train_items = [it for it in train_items if it.id not in done_ids]
-        print(f"Resuming: {len(done_ids)} already attempted, {kept} kept.")
+        if args.repass:
+            print(f"Re-pass: re-attempting all {len(train_items)} train questions, {kept} kept so far.")
+        else:
+            for line in log_path.open(encoding="utf-8"):
+                done_ids.add(json.loads(line)["id"])
+            train_items = [it for it in train_items if it.id not in done_ids]
+            print(f"Resuming: {len(done_ids)} already attempted, {kept} kept.")
 
     if args.limit is not None:
         train_items = train_items[: args.limit]
